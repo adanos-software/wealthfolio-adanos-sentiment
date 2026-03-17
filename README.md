@@ -1,5 +1,7 @@
 # Adanos Finance Sentiment API Addon for Wealthfolio
 
+![Adanos Sentiment dashboard](./assets/adanos-sentiment-dashboard.png)
+
 `adanos-sentiment` is a Wealthfolio add-on that overlays Adanos market
 sentiment directly on top of portfolio holdings.
 
