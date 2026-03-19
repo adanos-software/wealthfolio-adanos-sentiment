@@ -30,19 +30,19 @@ const PLATFORM_CONFIG: Record<
     label: "Reddit",
     stockPath: "/reddit/stocks/v1/stock",
     activityMetricLabel: "Mentions",
-    activityMetricKey: "total_mentions",
+    activityMetricKey: "mentions",
   },
   x: {
     label: "X.com",
     stockPath: "/x/stocks/v1/stock",
     activityMetricLabel: "Mentions",
-    activityMetricKey: "total_mentions",
+    activityMetricKey: "mentions",
   },
   news: {
     label: "News",
     stockPath: "/news/stocks/v1/stock",
     activityMetricLabel: "Mentions",
-    activityMetricKey: "total_mentions",
+    activityMetricKey: "mentions",
   },
   polymarket: {
     label: "Polymarket",
@@ -112,6 +112,19 @@ export async function fetchAccountStatus(apiKey: string): Promise<AdanosAccountS
   return accountStatusFromHeaders;
 }
 
+function resolveActivityMetricValue(
+  stock: StockDetailRow | undefined,
+  metricKey: keyof StockDetailRow,
+): number | null {
+  if (!stock) {
+    return null;
+  }
+  if (metricKey === "mentions") {
+    return asNumber(stock.mentions ?? stock.total_mentions);
+  }
+  return asNumber(stock[metricKey]);
+}
+
 export async function fetchPortfolioSentiment({
   apiKey,
   holdings,
@@ -170,7 +183,7 @@ export async function fetchPortfolioSentiment({
         trend: normalizeTrend(stock?.trend),
         sentiment: stock?.sentiment_score ?? null,
         activityMetricLabel: config.activityMetricLabel,
-        activityMetricValue: asNumber(stock?.[config.activityMetricKey]),
+        activityMetricValue: resolveActivityMetricValue(stock, config.activityMetricKey),
       };
     });
 
