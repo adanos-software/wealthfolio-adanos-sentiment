@@ -46,7 +46,7 @@ export default function SettingsPage({ ctx }: SettingsPageProps) {
     error: accountStatusError,
     refreshAccountStatus,
     clearAccountStatus,
-  } = useAdanosAccountStatus(apiKey);
+  } = useAdanosAccountStatus(ctx, apiKey);
   const { preferences, updatePreferences, isUpdating } = useAdanosPreferences(ctx);
   const [draftApiKey, setDraftApiKey] = React.useState("");
 
@@ -57,20 +57,17 @@ export default function SettingsPage({ ctx }: SettingsPageProps) {
   const handleSaveApiKey = async () => {
     const nextApiKey = draftApiKey.trim() || null;
     await saveApiKey(nextApiKey);
-    clearAccountStatus();
+    await clearAccountStatus();
 
     if (nextApiKey) {
       await refreshAccountStatus(nextApiKey);
-      return;
     }
-
-    clearAccountStatus();
   };
 
   const handleClearApiKey = async () => {
     setDraftApiKey("");
     await saveApiKey(null);
-    clearAccountStatus();
+    await clearAccountStatus();
   };
 
   const handlePlatformToggle = (platformId: AdanosPlatformId, checked: boolean) => {

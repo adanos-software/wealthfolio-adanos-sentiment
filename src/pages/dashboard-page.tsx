@@ -12,7 +12,7 @@ interface DashboardPageProps {
 }
 
 const lookbackItems = [
-  { value: "1" as const, label: "24H" },
+  { value: "1" as const, label: "1D" },
   { value: "7" as const, label: "7D" },
   { value: "14" as const, label: "14D" },
   { value: "30" as const, label: "30D" },
@@ -28,7 +28,7 @@ export default function DashboardPage({ ctx }: DashboardPageProps) {
   });
   const sourcesLabel = preferences.enabledPlatforms.map(getPlatformLabel).join(" • ");
   const handleLookbackChange = (value: "1" | "7" | "14" | "30") => {
-    updatePreferences({ days: Number(value) as 1 | 7 | 14 | 30 });
+    updatePreferences({ lookbackDays: Number(value) as 1 | 7 | 14 | 30 });
   };
 
   return (
@@ -41,7 +41,7 @@ export default function DashboardPage({ ctx }: DashboardPageProps) {
             <div className="hidden rounded-2xl border border-border/70 bg-background/70 p-1 shadow-sm md:block">
               <AnimatedToggleGroup
                 items={lookbackItems}
-                value={String(preferences.days)}
+                value={String(preferences.lookbackDays)}
                 onValueChange={(value) => handleLookbackChange(value as "1" | "7" | "14" | "30")}
                 variant="secondary"
                 size="sm"
@@ -78,7 +78,7 @@ export default function DashboardPage({ ctx }: DashboardPageProps) {
           <div className="rounded-2xl border border-border/70 bg-background/70 p-1 shadow-sm">
             <AnimatedToggleGroup
               items={lookbackItems}
-              value={String(preferences.days)}
+              value={String(preferences.lookbackDays)}
               onValueChange={(value) => handleLookbackChange(value as "1" | "7" | "14" | "30")}
               variant="secondary"
               size="sm"
@@ -88,7 +88,7 @@ export default function DashboardPage({ ctx }: DashboardPageProps) {
 
         <div className="flex flex-wrap gap-2">
           <InfoPill icon={<Icons.Clock className="h-3.5 w-3.5" />}>
-            {formatLookbackLabel(preferences.days)}
+            {formatLookbackLabel(preferences.lookbackDays)}
           </InfoPill>
           <InfoPill icon={<Icons.Globe className="h-3.5 w-3.5" />}>{sourcesLabel}</InfoPill>
           <InfoPill icon={<Icons.Activity2 className="h-3.5 w-3.5" />}>

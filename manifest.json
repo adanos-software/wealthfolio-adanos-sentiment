@@ -1,66 +1,55 @@
 {
   "id": "adanos-sentiment",
   "name": "Adanos Sentiment",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Overlay Adanos stock sentiment from Reddit, X, news, and Polymarket on your largest portfolio holdings",
-  "author": "Adanos Sentiment",
+  "author": "Adanos",
   "main": "dist/addon.js",
-  "sdkVersion": "3.1.2",
+  "sdkVersion": "3.7.0",
+  "minWealthfolioVersion": "3.7.0",
   "enabled": true,
+  "contributes": {
+    "routes": [
+      { "id": "adanos-sentiment" },
+      { "id": "adanos-sentiment-settings", "path": "settings" }
+    ],
+    "links": {
+      "sidebar": [
+        {
+          "id": "adanos-sentiment",
+          "route": "adanos-sentiment",
+          "label": "Adanos Sentiment",
+          "icon": "chart-line-up",
+          "order": 180
+        }
+      ]
+    }
+  },
+  "hostDependencies": {
+    "@tanstack/react-query": "^5.90.0",
+    "@wealthfolio/addon-sdk": "^3.7.0",
+    "@wealthfolio/ui": "^3.7.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "network": {
+    "allowedHosts": ["api.adanos.org"]
+  },
   "permissions": [
     {
       "category": "portfolio",
-      "functions": [
-        {
-          "name": "getHoldings",
-          "isDeclared": true,
-          "isDetected": false,
-          "detectedAt": null
-        }
-      ],
+      "functions": ["getHoldings"],
       "purpose": "Read the current portfolio holdings and map the largest positions to Adanos ticker sentiment"
     },
     {
       "category": "secrets",
-      "functions": [
-        {
-          "name": "set",
-          "isDeclared": true,
-          "isDetected": false,
-          "detectedAt": null
-        },
-        {
-          "name": "get",
-          "isDeclared": true,
-          "isDetected": false,
-          "detectedAt": null
-        },
-        {
-          "name": "delete",
-          "isDeclared": true,
-          "isDetected": false,
-          "detectedAt": null
-        }
-      ],
+      "functions": ["set", "get", "delete"],
       "purpose": "Store the Adanos API key securely in addon-scoped encrypted storage"
     },
     {
-      "category": "ui",
-      "functions": [
-        {
-          "name": "sidebar.addItem",
-          "isDeclared": true,
-          "isDetected": false,
-          "detectedAt": null
-        },
-        {
-          "name": "router.add",
-          "isDeclared": true,
-          "isDetected": false,
-          "detectedAt": null
-        }
-      ],
-      "purpose": "Add navigation and settings pages for the Adanos sentiment dashboard"
+      "category": "network",
+      "functions": ["request"],
+      "purpose": "Fetch sentiment and quota data from api.adanos.org for portfolio tickers"
     }
   ]
 }

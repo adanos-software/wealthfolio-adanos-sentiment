@@ -27,7 +27,7 @@ interface HoldingLike {
 }
 
 export const DEFAULT_PREFERENCES: AdanosPreferences = {
-  days: 7,
+  lookbackDays: 7,
   enabledPlatforms: ["reddit", "x", "news", "polymarket"],
 };
 
@@ -460,8 +460,8 @@ function getSourceAlignment(range: number): CompositeAlignment {
   return { label: "Wide divergence", className: "divergent" };
 }
 
-export function formatLookbackLabel(days: 1 | 7 | 14 | 30): string {
-  return days === 1 ? "Last 24 hours" : `Last ${days} days`;
+export function formatLookbackLabel(lookbackDays: 1 | 7 | 14 | 30): string {
+  return lookbackDays === 1 ? "Today (UTC)" : `Last ${lookbackDays} UTC days`;
 }
 
 export function formatFetchedAtLabel(value: string | null | undefined): string {
