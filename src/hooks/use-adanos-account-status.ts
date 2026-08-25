@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { AddonContext } from "@wealthfolio/addon-sdk";
 import { fetchAccountStatus } from "../lib/adanos-client";
 import {
   clearStoredAccountStatus,
@@ -10,13 +11,13 @@ export function getAccountStatusQueryKey(apiKey: string | null) {
   return ["adanos-account-status", apiKey ? apiKey.slice(-6) : "missing"] as const;
 }
 
-export function useAdanosAccountStatus(apiKey: string | null) {
+export function useAdanosAccountStatus(ctx: AddonContext, apiKey: string | null) {
   const queryClient = useQueryClient();
   const queryKey = getAccountStatusQueryKey(apiKey);
 
   const query = useQuery({
     queryKey,
-    queryFn: async () => loadStoredAccountStatus(apiKey),
+    queryFn: async () => loadStoredAccountStatus(ctx.api.storage, apiKey),
     staleTime: Infinity,
   });
 
@@ -28,14 +29,14 @@ export function useAdanosAccountStatus(apiKey: string | null) {
         return null;
       }
 
-      const status = await fetchAccountStatus(effectiveApiKey);
-      saveStoredAccountStatus(effectiveApiKey, status);
+      const status = await fetchAccountStatus(ctx.api.network, effectiveApiKey);
+      await saveStoredAccountStatus(ctx.api.storage, effectiveApiKey, status);
       return status;
     },
   });
 
-  const clearStatus = () => {
-    clearStoredAccountStatus();
+  const clearStatus = async () => {
+    await clearStoredAccountStatus(ctx.api.storage);
     queryClient.removeQueries({ queryKey: ["adanos-account-status"] });
   };
 

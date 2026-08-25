@@ -1,3 +1,4 @@
+import type { NetworkAPI, NetworkResponse } from "@wealthfolio/addon-sdk";
 import type {
   AdanosAccountStatus,
   AdanosAccountType,
@@ -53,10 +54,12 @@ const PLATFORM_CONFIG: Record<
 };
 
 interface FetchPortfolioSentimentArgs {
+  network: NetworkAPI;
   apiKey: string;
   holdings: TrackedHolding[];
-  days: number;
+  lookbackDays: number;
   enabledPlatforms: AdanosPlatformId[];
+  now?: Date;
 }
 
 interface CompareResult {
@@ -74,13 +77,20 @@ class AdanosRequestError extends Error {
   }
 }
 
-export async function fetchAccountStatus(apiKey: string): Promise<AdanosAccountStatus> {
+export async function fetchAccountStatus(
+  network: NetworkAPI,
+  apiKey: string,
+  now = new Date(),
+): Promise<AdanosAccountStatus> {
   const url = new URL(`${ADANOS_BASE_URL}/reddit/stocks/v1/compare`);
+  const dateRange = buildUtcDateRange(1, now);
   url.searchParams.set("tickers", "TSLA");
-  url.searchParams.set("days", "1");
+  url.searchParams.set("from", dateRange.from);
+  url.searchParams.set("to", dateRange.to);
 
-  const response = await fetch(url.toString(), {
-    cache: "no-store",
+  const response = await network.request({
+    url: url.toString(),
+    method: "GET",
     headers: {
       Accept: "application/json",
       "X-API-Key": apiKey,
@@ -89,8 +99,8 @@ export async function fetchAccountStatus(apiKey: string): Promise<AdanosAccountS
 
   const accountStatusFromHeaders = parseAccountStatusFromHeaders(response);
 
-  if (!response.ok) {
-    const errorPayload = await readJsonSafely(response);
+  if (!isSuccessful(response.status)) {
+    const errorPayload = readJsonSafely(response);
     const accountStatusFromError = parseAccountStatusFromError(errorPayload);
     const mergedAccountStatus = mergeAccountStatuses(
       [accountStatusFromHeaders, accountStatusFromError].filter(
@@ -126,10 +136,12 @@ function resolveActivityMetricValue(
 }
 
 export async function fetchPortfolioSentiment({
+  network,
   apiKey,
   holdings,
-  days,
+  lookbackDays,
   enabledPlatforms,
+  now = new Date(),
 }: FetchPortfolioSentimentArgs): Promise<PortfolioSentimentResult> {
   const tickers = holdings.map((holding) => holding.symbol);
   const platforms = PLATFORM_ORDER.filter((platformId) => enabledPlatforms.includes(platformId));
@@ -139,7 +151,7 @@ export async function fetchPortfolioSentiment({
       tickers.map(async (ticker) => ({
         platformId,
         ticker,
-        response: await fetchStock(apiKey, platformId, ticker, days),
+        response: await fetchStock(network, apiKey, platformId, ticker, lookbackDays, now),
       })),
     ),
   );
@@ -213,16 +225,22 @@ export async function fetchPortfolioSentiment({
 }
 
 async function fetchStock(
+  network: NetworkAPI,
   apiKey: string,
   platformId: AdanosPlatformId,
   ticker: string,
-  days: number,
+  lookbackDays: number,
+  now: Date,
 ): Promise<CompareResult> {
   const config = PLATFORM_CONFIG[platformId];
   const url = new URL(`${ADANOS_BASE_URL}${config.stockPath}/${encodeURIComponent(ticker)}`);
-  url.searchParams.set("days", String(days));
+  const dateRange = buildUtcDateRange(lookbackDays, now);
+  url.searchParams.set("from", dateRange.from);
+  url.searchParams.set("to", dateRange.to);
 
-  const response = await fetch(url.toString(), {
+  const response = await network.request({
+    url: url.toString(),
+    method: "GET",
     headers: {
       Accept: "application/json",
       "X-API-Key": apiKey,
@@ -242,8 +260,8 @@ async function fetchStock(
     };
   }
 
-  if (!response.ok) {
-    const errorPayload = await readJsonSafely(response);
+  if (!isSuccessful(response.status)) {
+    const errorPayload = readJsonSafely(response);
     const accountStatusFromError = parseAccountStatusFromError(errorPayload);
     throw new AdanosRequestError(
       `${config.label}: ${extractErrorMessage(errorPayload, response.status)}`,
@@ -256,17 +274,21 @@ async function fetchStock(
   }
 
   return {
-    response: (await response.json()) as StockDetailRow,
+    response: readJsonSafely(response) as StockDetailRow,
     accountStatus: accountStatusFromHeaders,
   };
 }
 
-async function readJsonSafely(response: Response): Promise<unknown> {
+function readJsonSafely(response: NetworkResponse): unknown {
   try {
-    return await response.json();
+    return JSON.parse(response.body) as unknown;
   } catch {
     return null;
   }
+}
+
+function isSuccessful(status: number): boolean {
+  return status >= 200 && status < 300;
 }
 
 function extractErrorMessage(payload: unknown, status: number): string {
@@ -290,11 +312,13 @@ function extractErrorMessage(payload: unknown, status: number): string {
   return `HTTP ${status}`;
 }
 
-export function parseAccountStatusFromHeaders(response: Response): AdanosAccountStatus | null {
-  const accountType = normalizeAccountType(response.headers.get("X-Account-Type"));
-  const monthlyLimit = parseMonthlyCount(response.headers.get("X-RateLimit-Limit-Monthly"));
-  const monthlyRemaining = parseMonthlyCount(response.headers.get("X-RateLimit-Remaining-Monthly"));
-  const monthlyUsed = parseMonthlyCount(response.headers.get("X-RateLimit-Used-Monthly")) ?? 0;
+export function parseAccountStatusFromHeaders(response: NetworkResponse): AdanosAccountStatus | null {
+  const accountType = normalizeAccountType(getHeader(response.headers, "X-Account-Type"));
+  const monthlyLimit = parseMonthlyCount(getHeader(response.headers, "X-RateLimit-Limit-Monthly"));
+  const monthlyRemaining = parseMonthlyCount(
+    getHeader(response.headers, "X-RateLimit-Remaining-Monthly"),
+  );
+  const monthlyUsed = parseMonthlyCount(getHeader(response.headers, "X-RateLimit-Used-Monthly")) ?? 0;
 
   if (!accountType && monthlyLimit === undefined && monthlyRemaining === undefined) {
     return null;
@@ -313,6 +337,27 @@ export function parseAccountStatusFromHeaders(response: Response): AdanosAccount
     pricingUrl: ADANOS_PRICING_URL,
     apiKeyPersistsAfterUpgrade: true,
     checkedAt: new Date().toISOString(),
+  };
+}
+
+function getHeader(headers: Record<string, string>, name: string): string | null {
+  const normalizedName = name.toLowerCase();
+  const entry = Object.entries(headers).find(([key]) => key.toLowerCase() === normalizedName);
+  return entry?.[1] ?? null;
+}
+
+export function buildUtcDateRange(lookbackDays: number, now = new Date()) {
+  if (!Number.isInteger(lookbackDays) || lookbackDays < 1) {
+    throw new Error("Lookback must be a positive whole number of UTC days.");
+  }
+
+  const to = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const from = new Date(to);
+  from.setUTCDate(from.getUTCDate() - (lookbackDays - 1));
+
+  return {
+    from: from.toISOString().slice(0, 10),
+    to: to.toISOString().slice(0, 10),
   };
 }
 

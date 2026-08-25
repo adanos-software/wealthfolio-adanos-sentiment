@@ -5,7 +5,7 @@ export type CompositeAlignmentClass = "aligned" | "mixed" | "divergent";
 export type CompositeRecommendationClass = "buy" | "hold" | "sell";
 
 export interface AdanosPreferences {
-  days: 1 | 7 | 14 | 30;
+  lookbackDays: 1 | 7 | 14 | 30;
   enabledPlatforms: AdanosPlatformId[];
 }
 

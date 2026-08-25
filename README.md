@@ -1,4 +1,4 @@
-# Adanos Finance Sentiment API Addon for Wealthfolio
+# Adanos Market Sentiment Addon for Wealthfolio
 
 ![Adanos Sentiment dashboard](./assets/adanos-sentiment-dashboard.png)
 
@@ -53,43 +53,42 @@ The settings screen also shows:
 
 ## Install in Wealthfolio
 
-This repository includes the built add-on bundle in `dist/addon.js`.
+The add-on requires Wealthfolio 3.7.0 or newer.
 
-To load it manually in a local Wealthfolio installation:
+1. Download `adanos-sentiment-1.1.0.zip` from the latest GitHub release.
+2. Open Wealthfolio's add-on settings.
+3. Install the downloaded add-on file.
 
-1. Create an add-on folder, for example:
-   `~/Library/Application Support/com.teymz.wealthfolio/addons/adanos-sentiment`
-2. Copy these files into that folder:
-   - `manifest.json`
-   - `dist/addon.js`
-   - optionally `README.md`
-3. Start or restart Wealthfolio
+After installation, open **Adanos Sentiment**, add an Adanos API key in the
+settings page, and choose the sources to query.
 
 ## Development
 
-This add-on is developed against the Wealthfolio monorepo because it depends on
-Wealthfolio workspace packages such as `@wealthfolio/addon-sdk` and
-`@wealthfolio/ui`.
-
-That means:
-
-- this repository is the public source mirror for the add-on
-- the committed `dist/` bundle is the easiest way to install it directly
-- rebuilding from source is best done inside a local Wealthfolio checkout
-
-Typical development commands inside a Wealthfolio checkout:
+The source builds independently with the public Wealthfolio 3.7 packages:
 
 ```bash
-pnpm --filter adanos-sentiment test
-pnpm --filter adanos-sentiment type-check
-pnpm --filter adanos-sentiment build
+pnpm install
+pnpm test
+pnpm type-check
+pnpm bundle
 ```
+
+The generated ZIP in `dist/` contains the manifest and production bundle.
+
+## Data and permissions
+
+- The API key is encrypted in Wealthfolio's add-on-scoped secrets storage.
+- Preferences and cached quota metadata use Wealthfolio's durable add-on storage.
+- Portfolio ticker symbols are sent only to `https://api.adanos.org`, through
+  Wealthfolio's network broker. The allowed host is declared in `manifest.json`.
+- The add-on reads holdings but does not place trades or modify portfolio data.
 
 ## Request usage
 
 - Account status checks use 1 API request.
 - The dashboard currently uses the existing Adanos stock detail endpoints to
   surface source-level `bullish_pct` and `trend`.
+- Requests use explicit inclusive UTC `from` and `to` dates.
 - A full dashboard refresh can therefore use multiple requests on free plans, up
   to `10 holdings x 4 platforms` in the current UI.
 - If a free account reaches the monthly cap, the add-on links to the pricing

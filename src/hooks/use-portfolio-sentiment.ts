@@ -17,7 +17,7 @@ export function usePortfolioSentiment({ ctx, apiKey, preferences }: UsePortfolio
     queryKey: [
       "adanos-portfolio-sentiment",
       apiKey ? apiKey.slice(-6) : "missing",
-      preferences.days,
+      preferences.lookbackDays,
       preferences.enabledPlatforms.join(","),
     ],
     queryFn: async () => {
@@ -38,9 +38,10 @@ export function usePortfolioSentiment({ ctx, apiKey, preferences }: UsePortfolio
       }
 
       return fetchPortfolioSentiment({
+        network: ctx.api.network,
         apiKey,
         holdings: trackedHoldings,
-        days: preferences.days,
+        lookbackDays: preferences.lookbackDays,
         enabledPlatforms: preferences.enabledPlatforms,
       });
     },
@@ -51,9 +52,13 @@ export function usePortfolioSentiment({ ctx, apiKey, preferences }: UsePortfolio
 
   React.useEffect(() => {
     if (apiKey && query.data?.quota) {
-      saveStoredAccountStatus(apiKey, query.data.quota);
+      void saveStoredAccountStatus(ctx.api.storage, apiKey, query.data.quota).catch((error) => {
+        ctx.api.logger.warn(
+          "Failed to cache Adanos account status: " + (error as Error).message,
+        );
+      });
     }
-  }, [apiKey, query.data?.quota]);
+  }, [apiKey, ctx.api.logger, ctx.api.storage, query.data?.quota]);
 
   return query;
 }

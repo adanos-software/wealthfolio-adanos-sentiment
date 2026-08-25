@@ -12,14 +12,14 @@ export function useAdanosPreferences(ctx: AddonContext) {
     queryKey: ["adanos-preferences"],
     queryFn: async (): Promise<AdanosPreferences> => {
       try {
-        const stored = localStorage.getItem(PREFERENCES_KEY);
+        const stored = await ctx.api.storage.get(PREFERENCES_KEY);
         if (!stored) {
           return DEFAULT_PREFERENCES;
         }
 
         const parsed = JSON.parse(stored) as Partial<AdanosPreferences>;
         return {
-          days: parsed.days ?? DEFAULT_PREFERENCES.days,
+          lookbackDays: parsed.lookbackDays ?? DEFAULT_PREFERENCES.lookbackDays,
           enabledPlatforms:
             parsed.enabledPlatforms && parsed.enabledPlatforms.length > 0
               ? parsed.enabledPlatforms
@@ -43,7 +43,7 @@ export function useAdanosPreferences(ctx: AddonContext) {
         ...patch,
       };
 
-      localStorage.setItem(PREFERENCES_KEY, JSON.stringify(updated));
+      await ctx.api.storage.set(PREFERENCES_KEY, JSON.stringify(updated));
       return updated;
     },
     onSuccess: (preferences) => {

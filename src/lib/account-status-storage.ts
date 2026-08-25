@@ -1,3 +1,4 @@
+import type { StorageAPI } from "@wealthfolio/addon-sdk";
 import type { AdanosAccountStatus } from "../types";
 
 const STORAGE_KEY = "adanos_account_status";
@@ -11,13 +12,16 @@ function getKeySuffix(apiKey: string): string {
   return apiKey.slice(-6);
 }
 
-export function loadStoredAccountStatus(apiKey: string | null): AdanosAccountStatus | null {
+export async function loadStoredAccountStatus(
+  storage: StorageAPI,
+  apiKey: string | null,
+): Promise<AdanosAccountStatus | null> {
   if (!apiKey) {
     return null;
   }
 
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = await storage.get(STORAGE_KEY);
     if (!raw) {
       return null;
     }
@@ -33,15 +37,19 @@ export function loadStoredAccountStatus(apiKey: string | null): AdanosAccountSta
   }
 }
 
-export function saveStoredAccountStatus(apiKey: string, status: AdanosAccountStatus): void {
+export async function saveStoredAccountStatus(
+  storage: StorageAPI,
+  apiKey: string,
+  status: AdanosAccountStatus,
+): Promise<void> {
   const payload: StoredAccountStatus = {
     keySuffix: getKeySuffix(apiKey),
     status,
   };
 
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+  await storage.set(STORAGE_KEY, JSON.stringify(payload));
 }
 
-export function clearStoredAccountStatus(): void {
-  localStorage.removeItem(STORAGE_KEY);
+export async function clearStoredAccountStatus(storage: StorageAPI): Promise<void> {
+  await storage.delete(STORAGE_KEY);
 }

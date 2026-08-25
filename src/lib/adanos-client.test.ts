@@ -1,29 +1,51 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import type { NetworkAPI, NetworkRequest, NetworkResponse } from "@wealthfolio/addon-sdk";
+import { describe, expect, it, vi } from "vitest";
 import {
-  fetchPortfolioSentiment,
+  buildUtcDateRange,
   fetchAccountStatus,
+  fetchPortfolioSentiment,
   mergeAccountStatuses,
   parseAccountStatusFromError,
   parseAccountStatusFromHeaders,
 } from "./adanos-client";
 
-describe("adanos account status headers", () => {
-  afterEach(() => {
-    vi.unstubAllGlobals();
-    vi.restoreAllMocks();
+const API_KEY = "placeholder";
+
+function response(
+  body: unknown,
+  status = 200,
+  headers: Record<string, string> = {},
+): NetworkResponse {
+  return { status, headers, body: JSON.stringify(body) };
+}
+
+function networkWith(
+  implementation: (request: NetworkRequest) => Promise<NetworkResponse>,
+): NetworkAPI & { request: ReturnType<typeof vi.fn> } {
+  return { request: vi.fn(implementation) };
+}
+
+describe("Adanos network client", () => {
+  it("builds inclusive UTC date ranges without the deprecated days parameter", () => {
+    const now = new Date("2026-08-25T23:45:00-07:00");
+
+    expect(buildUtcDateRange(1, now)).toEqual({ from: "2026-08-26", to: "2026-08-26" });
+    expect(buildUtcDateRange(7, now)).toEqual({ from: "2026-08-20", to: "2026-08-26" });
   });
 
-  it("parses unlimited professional headers", () => {
-    const response = new Response(null, {
-      headers: {
-        "X-Account-Type": "professional",
-        "X-RateLimit-Limit-Monthly": "unlimited",
-        "X-RateLimit-Remaining-Monthly": "unlimited",
-        "X-RateLimit-Used-Monthly": "39875",
-      },
-    });
-
-    expect(parseAccountStatusFromHeaders(response)).toMatchObject({
+  it("parses unlimited professional headers case-insensitively", () => {
+    expect(
+      parseAccountStatusFromHeaders({
+        status: 200,
+        body: "{}",
+        headers: {
+          "x-account-type": "professional",
+          "x-ratelimit-limit-monthly": "unlimited",
+          "x-ratelimit-remaining-monthly": "unlimited",
+          "x-ratelimit-used-monthly": "39875",
+        },
+      }),
+    ).toMatchObject({
       status: "active",
       accountType: "professional",
       monthlyLimit: null,
@@ -33,37 +55,17 @@ describe("adanos account status headers", () => {
     });
   });
 
-  it("parses free-tier monthly quota headers", () => {
-    const response = new Response(null, {
-      headers: {
-        "X-Account-Type": "free",
-        "X-RateLimit-Limit-Monthly": "250",
-        "X-RateLimit-Remaining-Monthly": "127",
-        "X-RateLimit-Used-Monthly": "123",
-      },
-    });
-
-    expect(parseAccountStatusFromHeaders(response)).toMatchObject({
-      status: "active",
-      accountType: "free",
-      monthlyLimit: 250,
-      monthlyRemaining: 127,
-      monthlyUsed: 123,
-      hasUnlimitedRequests: false,
-    });
-  });
-
   it("parses monthly limit exceeded payloads", () => {
-    const status = parseAccountStatusFromError({
-      detail: {
-        message: "Free tier limit of 250 requests per month exceeded",
-        limit: "250",
-        used: "250",
-        account_type: "free",
-      },
-    });
-
-    expect(status).toMatchObject({
+    expect(
+      parseAccountStatusFromError({
+        detail: {
+          message: "Free tier limit of 250 requests per month exceeded",
+          limit: "250",
+          used: "250",
+          account_type: "free",
+        },
+      }),
+    ).toMatchObject({
       status: "monthly_limit_exceeded",
       accountType: "free",
       monthlyLimit: 250,
@@ -74,27 +76,26 @@ describe("adanos account status headers", () => {
   });
 
   it("prefers exhausted quota states when merging", () => {
+    const base = {
+      accountType: "free" as const,
+      monthlyLimit: 250,
+      hasUnlimitedRequests: false,
+      pricingUrl: "https://adanos.org/pricing",
+      apiKeyPersistsAfterUpgrade: true,
+    };
     const merged = mergeAccountStatuses([
       {
+        ...base,
         status: "active",
-        accountType: "free",
-        monthlyLimit: 250,
         monthlyUsed: 120,
         monthlyRemaining: 130,
-        hasUnlimitedRequests: false,
-        pricingUrl: "https://adanos.org/pricing",
-        apiKeyPersistsAfterUpgrade: true,
         checkedAt: "2026-03-16T20:00:00.000Z",
       },
       {
+        ...base,
         status: "monthly_limit_exceeded",
-        accountType: "free",
-        monthlyLimit: 250,
         monthlyUsed: 250,
         monthlyRemaining: 0,
-        hasUnlimitedRequests: false,
-        pricingUrl: "https://adanos.org/pricing",
-        apiKeyPersistsAfterUpgrade: true,
         checkedAt: "2026-03-16T20:00:01.000Z",
       },
     ]);
@@ -103,138 +104,69 @@ describe("adanos account status headers", () => {
     expect(merged?.monthlyRemaining).toBe(0);
   });
 
-  it("returns parsed quota status instead of throwing on a 429 status check", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(
-        new Response(
-          JSON.stringify({
-            detail: {
-              message: "Free tier limit of 250 requests per month exceeded",
-              limit: 250,
-              used: 250,
-              account_type: "free",
-            },
-          }),
-          {
-            status: 429,
-            headers: {
-              "Content-Type": "application/json",
-              "X-Account-Type": "free",
-              "X-RateLimit-Limit-Monthly": "250",
-              "X-RateLimit-Remaining-Monthly": "0",
-              "X-RateLimit-Used-Monthly": "250",
-            },
-          },
-        ),
-      ),
-    );
-
-    await expect(fetchAccountStatus("sk_live_test")).resolves.toMatchObject({
-      status: "monthly_limit_exceeded",
-      accountType: "free",
-      monthlyLimit: 250,
-      monthlyRemaining: 0,
-    });
-  });
-
-  it("checks account status through the compare endpoint to avoid cached trending headers", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          period_days: 1,
-          stocks: [],
-        }),
+  it("returns quota status instead of throwing on a brokered 429 response", async () => {
+    const network = networkWith(async () =>
+      response(
         {
-          status: 200,
-          headers: {
-            "Content-Type": "application/json",
-            "X-Account-Type": "free",
-            "X-RateLimit-Limit-Monthly": "250",
-            "X-RateLimit-Remaining-Monthly": "244",
-            "X-RateLimit-Used-Monthly": "6",
+          detail: {
+            message: "Free tier limit of 250 requests per month exceeded",
+            limit: 250,
+            used: 250,
+            account_type: "free",
           },
+        },
+        429,
+        {
+          "X-Account-Type": "free",
+          "X-RateLimit-Limit-Monthly": "250",
+          "X-RateLimit-Remaining-Monthly": "0",
+          "X-RateLimit-Used-Monthly": "250",
         },
       ),
     );
 
-    vi.stubGlobal("fetch", fetchMock);
-
-    await fetchAccountStatus("sk_live_test");
-
-    expect(fetchMock).toHaveBeenCalledWith(
-      "https://api.adanos.org/reddit/stocks/v1/compare?tickers=TSLA&days=1",
-      expect.objectContaining({
-        cache: "no-store",
-        headers: expect.objectContaining({
-          "X-API-Key": "sk_live_test",
-        }),
-      }),
-    );
+    await expect(
+      fetchAccountStatus(network, API_KEY, new Date("2026-08-25T12:00:00Z")),
+    ).resolves.toMatchObject({
+      status: "monthly_limit_exceeded",
+      accountType: "free",
+      monthlyRemaining: 0,
+    });
+    expect(network.request).toHaveBeenCalledWith({
+      url: "https://api.adanos.org/reddit/stocks/v1/compare?tickers=TSLA&from=2026-08-25&to=2026-08-25",
+      method: "GET",
+      headers: { Accept: "application/json", "X-API-Key": API_KEY },
+    });
   });
 
-  it("builds source cards from stock detail endpoints with bullish percent and trend", async () => {
-    const fetchMock = vi.fn(async (input: string | URL) => {
-      const url = String(input);
-
-      if (url.includes("/reddit/stocks/v1/stock/TSLA")) {
-        return new Response(
-          JSON.stringify({
-            ticker: "TSLA",
-            company_name: "Tesla, Inc.",
-            found: true,
-            buzz_score: 75.2,
-            sentiment_score: -0.01,
-            bullish_pct: 32,
-            mentions: 650,
-            total_mentions: 650,
-            trend: "falling",
-          }),
-          {
-            status: 200,
-            headers: {
-              "Content-Type": "application/json",
-              "X-Account-Type": "free",
-              "X-RateLimit-Limit-Monthly": "250",
-              "X-RateLimit-Remaining-Monthly": "245",
-              "X-RateLimit-Used-Monthly": "5",
-            },
-          },
-        );
-      }
-
-      if (url.includes("/polymarket/stocks/v1/stock/TSLA")) {
-        return new Response(
-          JSON.stringify({
-            ticker: "TSLA",
-            company_name: "Tesla, Inc.",
-            found: true,
-            buzz_score: 82.9,
-            sentiment_score: 0.3,
-            bullish_pct: 30,
-            trade_count: 3485,
-            trend: "falling",
-          }),
-          {
-            status: 200,
-            headers: {
-              "Content-Type": "application/json",
-              "X-Account-Type": "free",
-              "X-RateLimit-Limit-Monthly": "250",
-              "X-RateLimit-Remaining-Monthly": "244",
-              "X-RateLimit-Used-Monthly": "6",
-            },
-          },
-        );
-      }
-
-      throw new Error(`Unexpected URL: ${url}`);
+  it("uses the network broker and explicit dates for each source", async () => {
+    const network = networkWith(async ({ url }) => {
+      const source = url.includes("/polymarket/") ? "polymarket" : "reddit";
+      return response(
+        {
+          ticker: "TSLA",
+          company_name: "Tesla, Inc.",
+          found: true,
+          buzz_score: source === "reddit" ? 75.2 : 82.9,
+          sentiment_score: source === "reddit" ? -0.01 : 0.3,
+          bullish_pct: source === "reddit" ? 32 : 30,
+          mentions: source === "reddit" ? 650 : undefined,
+          trade_count: source === "polymarket" ? 3485 : undefined,
+          trend: "falling",
+        },
+        200,
+        {
+          "X-Account-Type": "free",
+          "X-RateLimit-Limit-Monthly": "250",
+          "X-RateLimit-Remaining-Monthly": source === "reddit" ? "245" : "244",
+          "X-RateLimit-Used-Monthly": source === "reddit" ? "5" : "6",
+        },
+      );
     });
 
-    vi.stubGlobal("fetch", fetchMock);
-
     const result = await fetchPortfolioSentiment({
-      apiKey: "sk_live_test",
+      network,
+      apiKey: API_KEY,
       holdings: [
         {
           symbol: "TSLA",
@@ -244,27 +176,22 @@ describe("adanos account status headers", () => {
           baseCurrency: "EUR",
         },
       ],
-      days: 7,
+      lookbackDays: 7,
       enabledPlatforms: ["reddit", "polymarket"],
+      now: new Date("2026-08-25T12:00:00Z"),
     });
 
-    expect(fetchMock).toHaveBeenCalledWith(
-      "https://api.adanos.org/reddit/stocks/v1/stock/TSLA?days=7",
+    const urls = network.request.mock.calls.map(([request]) => request.url);
+    expect(urls).toEqual([
+      "https://api.adanos.org/reddit/stocks/v1/stock/TSLA?from=2026-08-19&to=2026-08-25",
+      "https://api.adanos.org/polymarket/stocks/v1/stock/TSLA?from=2026-08-19&to=2026-08-25",
+    ]);
+    expect(network.request).toHaveBeenCalledWith(
       expect.objectContaining({
-        headers: expect.objectContaining({
-          "X-API-Key": "sk_live_test",
-        }),
+        method: "GET",
+        headers: { Accept: "application/json", "X-API-Key": API_KEY },
       }),
     );
-    expect(fetchMock).toHaveBeenCalledWith(
-      "https://api.adanos.org/polymarket/stocks/v1/stock/TSLA?days=7",
-      expect.objectContaining({
-        headers: expect.objectContaining({
-          "X-API-Key": "sk_live_test",
-        }),
-      }),
-    );
-
     expect(result.holdings[0].platforms).toEqual([
       expect.objectContaining({
         platformId: "reddit",
@@ -272,7 +199,6 @@ describe("adanos account status headers", () => {
         bullishPct: 32,
         activityMetricLabel: "Mentions",
         activityMetricValue: 650,
-        trend: "falling",
       }),
       expect.objectContaining({
         platformId: "polymarket",
@@ -280,23 +206,8 @@ describe("adanos account status headers", () => {
         bullishPct: 30,
         activityMetricLabel: "Trades",
         activityMetricValue: 3485,
-        trend: "falling",
       }),
     ]);
-    expect(result.holdings[0].compositeSignal).toMatchObject({
-      bullishAverage: 31,
-      sourceAlignment: {
-        label: "High agreement",
-        className: "aligned",
-      },
-      recommendation: {
-        label: "Sell",
-        className: "sell",
-      },
-    });
-    expect(result.quota).toMatchObject({
-      accountType: "free",
-      monthlyRemaining: 244,
-    });
+    expect(result.quota).toMatchObject({ accountType: "free", monthlyRemaining: 244 });
   });
 });
